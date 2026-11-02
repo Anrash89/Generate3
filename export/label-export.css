@@ -1,0 +1,59 @@
+@font-face {
+  font-family: LabelSans;
+  src: url('./fonts/LiberationSans-Regular.ttf') format('truetype');
+  font-weight: 100 500;
+  font-display: block;
+}
+@font-face {
+  font-family: LabelSans;
+  src: url('./fonts/LiberationSans-Bold.ttf') format('truetype');
+  font-weight: 501 900;
+  font-display: block;
+}
+@font-face {
+  font-family: LabelMono;
+  src: url('./fonts/DejaVuSansMono.ttf') format('truetype');
+  font-weight: 400;
+  font-display: block;
+}
+/* The same bundled fonts are used in the preview, print and embedded PDF. */
+.label-sheet {
+  box-sizing: border-box;
+  font-family: LabelSans, Arial, sans-serif;
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+.label-barcode svg text { font-family: LabelMono, monospace !important; }
+.label-barcode svg { overflow: visible; }
+.label-export-stage {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  pointer-events: none;
+  contain: layout style;
+}
+.label-export-stage .label-sheet { box-shadow: none; transform: none; margin: 0; }
+.label-export-stage .safe-area { display: none; }
+.export-print-button { white-space: nowrap; }
+@media print {
+  /* Ctrl+P also prints only the label; hidden UI must not create pages. */
+  html, body { margin: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
+  body > :not(.app-shell):not(.label-print-root) { display: none !important; }
+  .app-shell > :not(.workspace), .workspace > :not(.preview-panel),
+  .preview-panel > :not(.preview-surface), .label-export-stage { display: none !important; }
+  .app-shell, .workspace, .preview-panel, .preview-surface, .sheet-scale-box, .sheet-transform {
+    display: block !important; position: static !important; transform: none !important;
+    width: auto !important; height: auto !important; min-height: 0 !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important;
+    overflow: visible !important; box-shadow: none !important;
+  }
+  .label-sheet {
+    position: relative !important; left: auto !important; top: auto !important;
+    margin: 0 !important; box-shadow: none !important;
+    break-inside: avoid; break-after: avoid; page-break-inside: avoid;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .safe-area { display: none !important; }
+  body.label-isolated-print > :not(.label-print-root) { display: none !important; }
+  .label-print-root, .label-print-root * { visibility: visible !important; }
+}

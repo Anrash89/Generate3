@@ -1,0 +1,6 @@
+Digitized data copyright (c) 2010 Google Corporation. 
+Copyright (c) 2012 Red Hat, Inc.
+
+Licensed under the SIL Open Font License, Version 1.1
+
+http://scripts.sil.org/OFL
