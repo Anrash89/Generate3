@@ -85,14 +85,12 @@
   }
   async function fontsFor(doc) {
     doc.registerFontkit(window.fontkit);
-    const [regular, bold, mono] = await Promise.all([
-      bytes('fonts/LiberationSans-Regular.ttf'), bytes('fonts/LiberationSans-Bold.ttf'),
-      bytes('fonts/DejaVuSansMono.ttf')
+    const [regular, bold] = await Promise.all([
+      bytes('fonts/LiberationSans-Regular.ttf'), bytes('fonts/LiberationSans-Bold.ttf')
     ]);
     return {
       regular: await doc.embedFont(regular, { subset: true }),
-      bold: await doc.embedFont(bold, { subset: true }),
-      mono: await doc.embedFont(mono, { subset: true })
+      bold: await doc.embedFont(bold, { subset: true })
     };
   }
   function drawDOMText(page, sheet, fonts, origin, pageHeight) {
@@ -130,13 +128,18 @@
       }
     }
   }
-  function drawBarcode(page, sheet, font, origin, pageHeight) {
+  async function drawBarcode(doc, page, sheet, origin, pageHeight) {
     const svg = sheet.querySelector('.label-barcode svg');
-    if (!svg) return;
-    page.setFont(font);
+    if (!svg?.querySelector('rect')) return;
+    const { PDFDocument, rgb, pushGraphicsState, concatTransformationMatrix, popGraphicsState } = window.PDFLib;
+    const bounds = svg.getBoundingClientRect();
+    const width = bounds.width * PT_PER_PX, height = bounds.height * PT_PER_PX;
+    const barcodeDoc = await PDFDocument.create();
+    const target = barcodeDoc.addPage([width, height]);
+    const face = window.fontkit.create(new Uint8Array(await bytes('fonts/DejaVuSansMono.ttf')));
     const point = (matrix, x, y) => ({
-      x: (matrix.a * x + matrix.c * y + matrix.e - origin.left) * PT_PER_PX,
-      y: pageHeight - (matrix.b * x + matrix.d * y + matrix.f - origin.top) * PT_PER_PX
+      x: (matrix.a * x + matrix.c * y + matrix.e - bounds.left) * PT_PER_PX,
+      y: height - (matrix.b * x + matrix.d * y + matrix.f - bounds.top) * PT_PER_PX
     });
     for (const element of svg.querySelectorAll('rect, text')) {
       const matrix = element.getScreenCTM();
@@ -147,25 +150,37 @@
         const q = point(matrix, box.x + box.width, box.y + box.height);
         const fill = getComputedStyle(element).fill;
         if (fill === 'none') continue;
-        const isWhite = fill === 'rgb(255, 255, 255)' || fill === '#ffffff';
-        page.drawRectangle({
+        const white = fill === 'rgb(255, 255, 255)' || fill === '#ffffff';
+        target.drawRectangle({
           x: Math.min(p.x, q.x), y: Math.min(p.y, q.y),
           width: Math.abs(q.x - p.x), height: Math.abs(q.y - p.y),
-          color: window.PDFLib.rgb(isWhite ? 1 : 0, isWhite ? 1 : 0, isWhite ? 1 : 0)
+          color: rgb(white ? 1 : 0, white ? 1 : 0, white ? 1 : 0)
         });
       } else {
-        const size = parseFloat(getComputedStyle(element).fontSize) * Math.hypot(matrix.a, matrix.b) * PT_PER_PX;
+        // Freeze only barcode digits as vector outlines. Importers cannot
+        // substitute their font, merge glyph positions or move the digits.
+        const scale = parseFloat(getComputedStyle(element).fontSize) / face.unitsPerEm * PT_PER_PX;
         for (let i = 0; i < element.textContent.length; i++) {
           const pos = element.getStartPositionOfChar(i);
           const p = point(matrix, pos.x, pos.y);
-          page.drawText(element.textContent[i], {
-            x: p.x, y: p.y, size,
-            rotate: window.PDFLib.degrees(-Math.atan2(matrix.b, matrix.a) * 180 / Math.PI),
-            color: window.PDFLib.rgb(0, 0, 0)
-          });
+          const glyph = face.glyphForCodePoint(element.textContent.codePointAt(i));
+          target.pushOperators(pushGraphicsState(), concatTransformationMatrix(
+            matrix.a * scale, -matrix.b * scale,
+            matrix.c * scale, -matrix.d * scale, p.x, p.y
+          ));
+          target.drawSvgPath(glyph.path.toSVG(), { x: 0, y: 0, scale: 1, color: rgb(0, 0, 0) });
+          target.pushOperators(popGraphicsState());
         }
       }
     }
+    // One self-contained vector object for the entire barcode, with a fixed
+    // local coordinate system and physical placement on the label.
+    const [block] = await doc.embedPdf(await barcodeDoc.save(), [0]);
+    page.drawPage(block, {
+      x: (bounds.left - origin.left) * PT_PER_PX,
+      y: pageHeight - (bounds.bottom - origin.top) * PT_PER_PX,
+      width, height
+    });
   }
   async function drawIcons(doc, page, sheet, origin, pageHeight) {
     for (const img of sheet.querySelectorAll('.label-icons img')) {
@@ -202,7 +217,7 @@
       page.drawRectangle({ x: border / 2, y: border / 2, width: width - border, height: height - border,
         borderWidth: border, borderColor: window.PDFLib.rgb(0, 0, 0) });
       drawDOMText(page, snap.sheet, fonts, origin, height);
-      drawBarcode(page, snap.sheet, fonts.mono, origin, height);
+      await drawBarcode(pdf, page, snap.sheet, origin, height);
       await drawIcons(pdf, page, snap.sheet, origin, height);
       return await pdf.save();
     } finally { snap.stage.remove(); }
